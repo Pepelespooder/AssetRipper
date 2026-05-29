@@ -92,6 +92,7 @@
     "export_deleting_old_files": "Clearing out existing files...",
     "export_directory_delete_user_confirmation": "The selected export directory already exists and everything it contains will be deleted. Are you sure you want to continue?",
     "export_in_progress": "Exporting Asset Files\n{0}%\n{1}/{2}",
+    "continue": "Continue",
     "export_in_progress_title": "Exporting...",
     "load_in_progress_title": "Loading...",
     "load_preparing": "Loading game files...",

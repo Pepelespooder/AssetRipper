@@ -10,7 +10,7 @@ public sealed class ExportProgressPage : DefaultPage
 	{
 		using (new Div(writer).WithClass("text-center mt-4").End())
 		{
-			new H1(writer).Close(Localization.ExportInProgressTitle);
+			new H1(writer).WithId("page-title").Close(Localization.ExportInProgressTitle);
 
 			using (new Div(writer).WithClass("progress mt-3 mb-2").WithStyle("height:30px;position:relative").End())
 			{
@@ -30,6 +30,13 @@ public sealed class ExportProgressPage : DefaultPage
 			}
 
 			new P(writer).WithId("status-text").WithClass("text-muted").Close(Localization.ExportPreparing);
+
+			new A(writer)
+				.WithId("continue-btn")
+				.WithHref("/Commands")
+				.WithClass("btn btn-success mt-3")
+				.WithStyle("display:none")
+				.Close(Localization.Continue);
 		}
 
 		using (new Div(writer)
@@ -46,14 +53,24 @@ public sealed class ExportProgressPage : DefaultPage
 				async function poll() {
 					try {
 						const s = await fetch('/Export/Status').then(r => r.json());
+						appendLog(s.Log);
 						if (s.Error) {
+							document.getElementById('page-title').textContent = 'Export Failed';
 							document.getElementById('status-text').textContent = s.Error;
 							document.getElementById('progress-bar').classList.remove('progress-bar-animated');
 							document.getElementById('progress-bar').classList.add('bg-danger');
+							document.getElementById('progress-text').textContent = 'Error';
+							document.getElementById('continue-btn').style.display = 'inline-block';
 							return;
 						}
 						if (!s.IsExporting) {
-							window.location.href = '/Commands';
+							document.getElementById('page-title').textContent = 'Export Complete!';
+							document.getElementById('progress-bar').classList.remove('progress-bar-animated');
+							document.getElementById('progress-bar').classList.add('bg-success');
+							document.getElementById('progress-bar').style.width = '100%';
+							document.getElementById('progress-text').textContent = '100%';
+							document.getElementById('status-text').textContent = s.Total + ' assets exported.';
+							document.getElementById('continue-btn').style.display = 'inline-block';
 							return;
 						}
 						const pct = s.Total > 0 ? Math.round(s.Current / s.Total * 100) : 0;
@@ -62,19 +79,20 @@ public sealed class ExportProgressPage : DefaultPage
 						bar.setAttribute('aria-valuenow', pct);
 						document.getElementById('progress-text').textContent = pct + '%';
 						document.getElementById('status-text').textContent = s.Current + ' / ' + s.Total;
-						if (s.Log && s.Log.length > lastLogCount) {
-							const con = document.getElementById('export-console');
-							for (let i = lastLogCount; i < s.Log.length; i++) {
-								const line = document.createElement('div');
-								line.textContent = s.Log[i];
-								con.appendChild(line);
-								if (con.children.length > 500) con.removeChild(con.firstChild);
-							}
-							lastLogCount = s.Log.length;
-							con.scrollTop = con.scrollHeight;
-						}
 					} catch (e) {}
 					setTimeout(poll, 500);
+				}
+				function appendLog(lines) {
+					if (!lines) return;
+					const con = document.getElementById('export-console');
+					for (let i = lastLogCount; i < lines.length; i++) {
+						const line = document.createElement('div');
+						line.textContent = lines[i];
+						con.appendChild(line);
+						if (con.children.length > 500) con.removeChild(con.firstChild);
+					}
+					lastLogCount = lines.length;
+					con.scrollTop = con.scrollHeight;
 				}
 				poll();
 				""");

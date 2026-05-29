@@ -10,7 +10,7 @@ public sealed class LoadProgressPage : DefaultPage
 	{
 		using (new Div(writer).WithClass("text-center mt-4").End())
 		{
-			new H1(writer).Close(Localization.LoadInProgressTitle);
+			new H1(writer).WithId("page-title").Close(Localization.LoadInProgressTitle);
 
 			using (new Div(writer).WithClass("progress mt-3 mb-2").WithStyle("height:30px;position:relative").End())
 			{
@@ -29,6 +29,13 @@ public sealed class LoadProgressPage : DefaultPage
 			}
 
 			new P(writer).WithId("status-text").WithClass("text-muted").Close(Localization.LoadPreparing);
+
+			new A(writer)
+				.WithId("continue-btn")
+				.WithHref("/")
+				.WithClass("btn btn-success mt-3")
+				.WithStyle("display:none")
+				.Close(Localization.Continue);
 		}
 
 		using (new Div(writer)
@@ -45,28 +52,37 @@ public sealed class LoadProgressPage : DefaultPage
 				async function poll() {
 					try {
 						const s = await fetch('/Load/Status').then(r => r.json());
+						appendLog(s.Log);
 						if (s.Error) {
+							document.getElementById('page-title').textContent = 'Load Failed';
 							document.getElementById('status-text').textContent = s.Error;
 							document.getElementById('progress-bar').classList.remove('progress-bar-animated');
 							document.getElementById('progress-bar').classList.add('bg-danger');
-						}
-						if (s.Log && s.Log.length > lastLogCount) {
-							const con = document.getElementById('load-console');
-							for (let i = lastLogCount; i < s.Log.length; i++) {
-								const line = document.createElement('div');
-								line.textContent = s.Log[i];
-								con.appendChild(line);
-								if (con.children.length > 500) con.removeChild(con.firstChild);
-							}
-							lastLogCount = s.Log.length;
-							con.scrollTop = con.scrollHeight;
+							document.getElementById('continue-btn').style.display = 'inline-block';
+							return;
 						}
 						if (!s.IsLoading) {
-							window.location.href = '/';
+							document.getElementById('page-title').textContent = 'Load Complete!';
+							document.getElementById('progress-bar').classList.remove('progress-bar-animated');
+							document.getElementById('progress-bar').classList.add('bg-success');
+							document.getElementById('status-text').textContent = 'Game files loaded successfully.';
+							document.getElementById('continue-btn').style.display = 'inline-block';
 							return;
 						}
 					} catch (e) {}
 					setTimeout(poll, 500);
+				}
+				function appendLog(lines) {
+					if (!lines) return;
+					const con = document.getElementById('load-console');
+					for (let i = lastLogCount; i < lines.length; i++) {
+						const line = document.createElement('div');
+						line.textContent = lines[i];
+						con.appendChild(line);
+						if (con.children.length > 500) con.removeChild(con.firstChild);
+					}
+					lastLogCount = lines.length;
+					con.scrollTop = con.scrollHeight;
 				}
 				poll();
 				""");
