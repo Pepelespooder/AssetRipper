@@ -53,9 +53,10 @@ public static class Commands
 
 			if (paths is { Length: > 0 })
 			{
-				GameFileLoader.LoadAndProcess(paths);
+				GameFileLoader.BeginLoadAndProcess(paths);
+				return "/Load/Progress";
 			}
-			return null;
+			return CommandsPath;
 		}
 	}
 
@@ -81,9 +82,10 @@ public static class Commands
 
 			if (paths is { Length: > 0 })
 			{
-				GameFileLoader.LoadAndProcess(paths);
+				GameFileLoader.BeginLoadAndProcess(paths);
+				return "/Load/Progress";
 			}
-			return null;
+			return CommandsPath;
 		}
 	}
 
@@ -93,23 +95,28 @@ public static class Commands
 		{
 			IFormCollection form = await request.ReadFormAsync();
 
-			string? path;
-			if (form.TryGetValue("Path", out StringValues values))
-			{
-				path = values;
-			}
-			else
+			if (!form.TryGetValue("Path", out StringValues values))
 			{
 				return CommandsPath;
 			}
 
-			if (!string.IsNullOrEmpty(path))
+			string? path = values;
+			if (string.IsNullOrEmpty(path))
 			{
-				bool createSubfolder = TryGetCreateSubfolder(form);
-				path = MaybeAppendTimestampedSubfolder(path, createSubfolder);
-				await GameFileLoader.ExportUnityProject(path);
+				return CommandsPath;
 			}
-			return null;
+
+			bool createSubfolder = TryGetCreateSubfolder(form);
+			path = MaybeAppendTimestampedSubfolder(path, createSubfolder);
+
+			string? prepared = await GameFileLoader.PrepareExportUnityProject(path);
+			if (prepared is null)
+			{
+				return CommandsPath;
+			}
+
+			GameFileLoader.BeginExportUnityProject(prepared);
+			return "/Export/Progress";
 		}
 	}
 
@@ -119,23 +126,28 @@ public static class Commands
 		{
 			IFormCollection form = await request.ReadFormAsync();
 
-			string? path;
-			if (form.TryGetValue("Path", out StringValues values))
-			{
-				path = values;
-			}
-			else
+			if (!form.TryGetValue("Path", out StringValues values))
 			{
 				return CommandsPath;
 			}
 
-			if (!string.IsNullOrEmpty(path))
+			string? path = values;
+			if (string.IsNullOrEmpty(path))
 			{
-				bool createSubfolder = TryGetCreateSubfolder(form);
-				path = MaybeAppendTimestampedSubfolder(path, createSubfolder);
-				await GameFileLoader.ExportPrimaryContent(path);
+				return CommandsPath;
 			}
-			return null;
+
+			bool createSubfolder = TryGetCreateSubfolder(form);
+			path = MaybeAppendTimestampedSubfolder(path, createSubfolder);
+
+			string? prepared = await GameFileLoader.PrepareExportPrimaryContent(path);
+			if (prepared is null)
+			{
+				return CommandsPath;
+			}
+
+			GameFileLoader.BeginExportPrimaryContent(prepared);
+			return "/Export/Progress";
 		}
 	}
 

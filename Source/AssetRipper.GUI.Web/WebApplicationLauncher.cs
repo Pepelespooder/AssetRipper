@@ -29,16 +29,25 @@ namespace AssetRipper.GUI.Web;
 
 public static class WebApplicationLauncher
 {
+	public static Action? FocusWindow { get; set; }
+
 	internal static class Defaults
 	{
 		public const int Port = 0;
+		public const bool LaunchBrowser = true;
 		public const bool Log = true;
 		public const string? LogPath = null;
-		public const bool Headless = false;
 	}
 
 	public static void Launch(string[] args)
 	{
+		if (args.Any(a => a.StartsWith("/electronPort", StringComparison.OrdinalIgnoreCase) ||
+		                  a.StartsWith("--electron", StringComparison.OrdinalIgnoreCase)))
+		{
+			Launch(Defaults.Port, launchBrowser: false, Defaults.Log, Defaults.LogPath);
+			return;
+		}
+
 		Arguments? arguments = Arguments.Parse(args);
 
 		if (arguments is null)
@@ -65,12 +74,11 @@ public static class WebApplicationLauncher
 			}
 		}
 
-		Launch(arguments.Port, arguments.Headless, arguments.Log, arguments.LogPath);
+		Launch(arguments.Port, arguments.LaunchBrowser, arguments.Log, arguments.LogPath);
 	}
 
-	public static void Launch(int port = Defaults.Port, bool headless = Defaults.Headless, bool log = Defaults.Log, string? logPath = Defaults.LogPath)
+	public static void Launch(int port = Defaults.Port, bool launchBrowser = Defaults.LaunchBrowser, bool log = Defaults.Log, string? logPath = Defaults.LogPath, Action<string>? onStarted = null)
 	{
-		GameFileLoader.Headless = headless;
 
 		WelcomeMessage.Print();
 
@@ -88,14 +96,15 @@ public static class WebApplicationLauncher
 
 		Localization.LoadLanguage(GameFileLoader.Settings.LanguageCode);
 
-		WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions()
+		WebApplicationOptions webAppOptions = new()
 		{
 #if DEBUG
 			EnvironmentName = Environments.Development,
 #else
 			EnvironmentName = Environments.Production,
 #endif
-		});
+		};
+		WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(webAppOptions);
 
 		builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
 
@@ -125,17 +134,18 @@ public static class WebApplicationLauncher
 #if !DEBUG
 		app.UseMiddleware<ErrorHandlingMiddleware>();
 #endif
-		if (!headless)
+		app.Lifetime.ApplicationStarted.Register(() =>
 		{
-			app.Lifetime.ApplicationStarted.Register(() =>
+			string? address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses.FirstOrDefault();
+			if (address is not null)
 			{
-				string? address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses.FirstOrDefault();
-				if (address is not null)
+				if (launchBrowser)
 				{
 					OpenUrl(address);
 				}
-			});
-		}
+				onStarted?.Invoke(address);
+			}
+		});
 
 		app.MapOpenApi(DocumentationPaths.OpenApi);
 		app.UseSwaggerUI(Theme.Gruvbox, null, c =>
@@ -253,6 +263,30 @@ public static class WebApplicationLauncher
 		})
 			.WithQueryStringParameter("Code", "Language code", true)
 			.Produces(StatusCodes.Status302Found);
+
+		//Load progress
+		app.MapGet("/Load/Progress", (context) =>
+		{
+			context.Response.DisableCaching();
+			return LoadProgressPage.Instance.WriteToResponse(context.Response);
+		}).ProducesHtmlPage();
+		app.MapGet("/Load/Status", (context) =>
+		{
+			context.Response.DisableCaching();
+			return Results.Json(LoadStatus.Snapshot, AppJsonSerializerContext.Default.LoadStatus).ExecuteAsync(context);
+		}).Produces<LoadStatus>();
+
+		//Export progress
+		app.MapGet("/Export/Progress", (context) =>
+		{
+			context.Response.DisableCaching();
+			return ExportProgressPage.Instance.WriteToResponse(context.Response);
+		}).ProducesHtmlPage();
+		app.MapGet("/Export/Status", (context) =>
+		{
+			context.Response.DisableCaching();
+			return Results.Json(ExportStatus.Snapshot, AppJsonSerializerContext.Default.ExportStatus).ExecuteAsync(context);
+		}).Produces<ExportStatus>();
 
 		//Commands
 		app.MapPost("/Export/UnityProject", Commands.HandleCommand<Commands.ExportUnityProject>)

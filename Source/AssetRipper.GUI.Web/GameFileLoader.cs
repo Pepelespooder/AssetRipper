@@ -39,6 +39,19 @@ public static class GameFileLoader
 	/// </remarks>
 	public static bool Premium => ExportHandler.GetType() != typeof(ExportHandler);
 
+	public static bool IsLoading { get; private set; }
+	public static string? LoadError { get; private set; }
+	private static readonly List<string> s_loadLog = [];
+	public static string[] LoadLogSnapshot { get { lock (s_loadLog) { return [.. s_loadLog]; } } }
+
+	public static bool IsExporting { get; private set; }
+	public static int ExportProgressCurrent { get; private set; }
+	public static int ExportProgressTotal { get; private set; }
+	public static string? ExportError { get; private set; }
+
+	private static readonly List<string> s_exportLog = [];
+	public static string[] ExportLogSnapshot { get { lock (s_exportLog) { return [.. s_exportLog]; } } }
+
 	public static void Reset()
 	{
 		if (GameData is not null)
@@ -56,46 +69,192 @@ public static class GameFileLoader
 		GameData = ExportHandler.LoadAndProcess(paths, LocalFileSystem.Instance);
 	}
 
-	public static async Task ExportUnityProject(string path)
+	public static void BeginLoadAndProcess(IReadOnlyList<string> paths)
 	{
-		if (IsLoaded && IsValidExportDirectory(path))
+		IsLoading = true;
+		LoadError = null;
+		lock (s_loadLog) { s_loadLog.Clear(); }
+
+		CaptureLogger captureLogger = new(s_loadLog);
+		Logger.Add(captureLogger);
+
+		_ = Task.Run(() =>
 		{
-			if (IsNonEmptyDirectory(path))
+			try
 			{
-				if (!await UserConsentsToDeletion())
-				{
-					Logger.Info(LogCategory.Export, "User declined to delete existing export directory. Aborting export.");
-					return;
-				}
+				Reset();
+				Settings.LogConfigurationValues();
+				GameData = ExportHandler.LoadAndProcess(paths, LocalFileSystem.Instance);
+			}
+			catch (Exception ex)
+			{
+				LoadError = ex.Message;
+				Logger.Error(LogCategory.Import, $"Load failed: {ex.Message}");
+			}
+			finally
+			{
+				IsLoading = false;
+				Logger.Remove(captureLogger);
+			}
+		});
+	}
+
+	public static async Task<string?> PrepareExportUnityProject(string path)
+	{
+		if (!IsLoaded || IsExporting || !IsValidExportDirectory(path))
+		{
+			return null;
+		}
+
+		if (IsNonEmptyDirectory(path))
+		{
+			if (!await UserConsentsToDeletion())
+			{
+				Logger.Info(LogCategory.Export, "User declined to delete existing export directory. Aborting export.");
+				return null;
+			}
+			try
+			{
 				Directory.Delete(path, true);
 			}
+			catch (IOException ex)
+			{
+				Logger.Error(LogCategory.Export, $"Could not clear export directory — a file is locked by another process: {ex.Message}");
+				return null;
+			}
+		}
 
-			Directory.CreateDirectory(path);
-			ExportHandler.Export(GameData, path, LocalFileSystem.Instance);
+		Directory.CreateDirectory(path);
+		return path;
+	}
+
+	public static void BeginExportUnityProject(string path)
+	{
+		if (!IsLoaded || IsExporting)
+		{
+			return;
+		}
+
+		IsExporting = true;
+		ExportProgressCurrent = 0;
+		ExportProgressTotal = 0;
+		ExportError = null;
+		lock (s_exportLog) { s_exportLog.Clear(); }
+
+		ExportHandler.ExportProgressUpdated += OnExportProgress;
+		ExportHandler.ExportCollectionStarted += OnExportCollectionStarted;
+
+		_ = Task.Run(() =>
+		{
+			try
+			{
+				ExportHandler.Export(GameData, path, LocalFileSystem.Instance);
+			}
+			catch (Exception ex)
+			{
+				ExportError = ex.Message;
+				Logger.Error(LogCategory.Export, $"Export failed: {ex.Message}");
+			}
+			finally
+			{
+				IsExporting = false;
+				ExportHandler.ExportProgressUpdated -= OnExportProgress;
+				ExportHandler.ExportCollectionStarted -= OnExportCollectionStarted;
+			}
+		});
+	}
+
+	public static async Task<string?> PrepareExportPrimaryContent(string path)
+	{
+		if (!IsLoaded || IsExporting || !IsValidExportDirectory(path))
+		{
+			return null;
+		}
+
+		if (IsNonEmptyDirectory(path))
+		{
+			if (!await UserConsentsToDeletion())
+			{
+				Logger.Info(LogCategory.Export, "User declined to delete existing export directory. Aborting export.");
+				return null;
+			}
+			try
+			{
+				Directory.Delete(path, true);
+			}
+			catch (IOException ex)
+			{
+				Logger.Error(LogCategory.Export, $"Could not clear export directory — a file is locked by another process: {ex.Message}");
+				return null;
+			}
+		}
+
+		Directory.CreateDirectory(path);
+		return path;
+	}
+
+	public static void BeginExportPrimaryContent(string path)
+	{
+		if (!IsLoaded || IsExporting)
+		{
+			return;
+		}
+
+		IsExporting = true;
+		ExportProgressCurrent = 0;
+		ExportProgressTotal = 0;
+		ExportError = null;
+		lock (s_exportLog) { s_exportLog.Clear(); }
+
+		_ = Task.Run(() =>
+		{
+			try
+			{
+				Logger.Info(LogCategory.Export, "Starting primary content export");
+				Logger.Info(LogCategory.Export, $"Attempting to export assets to {path}...");
+				Settings.ExportRootPath = path;
+				PrimaryContentExporter.CreateDefault(GameData, Settings).Export(GameBundle, Settings, LocalFileSystem.Instance);
+				Logger.Info(LogCategory.Export, "Finished exporting primary content.");
+			}
+			catch (Exception ex)
+			{
+				ExportError = ex.Message;
+				Logger.Error(LogCategory.Export, $"Primary content export failed: {ex.Message}");
+			}
+			finally
+			{
+				IsExporting = false;
+			}
+		});
+	}
+
+	public static async Task ExportUnityProject(string path)
+	{
+		string? prepared = await PrepareExportUnityProject(path);
+		if (prepared is not null)
+		{
+			BeginExportUnityProject(prepared);
 		}
 	}
 
 	public static async Task ExportPrimaryContent(string path)
 	{
-		if (IsLoaded && IsValidExportDirectory(path))
+		string? prepared = await PrepareExportPrimaryContent(path);
+		if (prepared is not null)
 		{
-			if (IsNonEmptyDirectory(path))
-			{
-				if (!await UserConsentsToDeletion())
-				{
-					Logger.Info(LogCategory.Export, "User declined to delete existing export directory. Aborting export.");
-					return;
-				}
-				Directory.Delete(path, true);
-			}
-
-			Directory.CreateDirectory(path);
-			Logger.Info(LogCategory.Export, "Starting primary content export");
-			Logger.Info(LogCategory.Export, $"Attempting to export assets to {path}...");
-			Settings.ExportRootPath = path;
-			PrimaryContentExporter.CreateDefault(GameData, Settings).Export(GameBundle, Settings, LocalFileSystem.Instance);
-			Logger.Info(LogCategory.Export, "Finished exporting primary content.");
+			BeginExportPrimaryContent(prepared);
 		}
+	}
+
+	private static void OnExportProgress(int current, int total)
+	{
+		ExportProgressCurrent = current;
+		ExportProgressTotal = total;
+	}
+
+	private static void OnExportCollectionStarted(string name)
+	{
+		lock (s_exportLog) { s_exportLog.Add(name); }
 	}
 
 	private static FullConfiguration LoadSettings()

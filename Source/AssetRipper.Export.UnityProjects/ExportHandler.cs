@@ -92,6 +92,9 @@ public class ExportHandler
 		yield return new ScriptableObjectProcessor();
 	}
 
+	public event Action<int, int>? ExportProgressUpdated;
+	public event Action<string>? ExportCollectionStarted;
+
 	public void Export(GameData gameData, string outputPath, FileSystem fileSystem)
 	{
 		Logger.Info(LogCategory.Export, "Starting export");
@@ -103,6 +106,14 @@ public class ExportHandler
 		Settings.SetProjectSettings(gameData.ProjectVersion);
 
 		ProjectExporter projectExporter = new(Settings, gameData.AssemblyManager);
+		if (ExportProgressUpdated is { } progressHandler)
+		{
+			projectExporter.EventExportProgressUpdated += (i, total) => progressHandler(i, total);
+		}
+		if (ExportCollectionStarted is { } collectionHandler)
+		{
+			projectExporter.EventExportCollectionStarted += name => collectionHandler(name);
+		}
 		BeforeExport(projectExporter);
 		projectExporter.DoFinalOverrides(Settings);
 		projectExporter.Export(gameData.GameBundle, Settings, fileSystem);

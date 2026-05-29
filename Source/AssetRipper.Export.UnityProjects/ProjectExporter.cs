@@ -12,6 +12,7 @@ public sealed partial class ProjectExporter
 	public event Action? EventExportPreparationFinished;
 	public event Action? EventExportStarted;
 	public event Action<int, int>? EventExportProgressUpdated;
+	public event Action<string>? EventExportCollectionStarted;
 	public event Action? EventExportFinished;
 
 	private readonly ObjectHandlerStack<IAssetExporter> assetExporterStack = new();
@@ -90,6 +91,7 @@ public sealed partial class ProjectExporter
 			if (collection.Exportable)
 			{
 				currentExportable++;
+				EventExportCollectionStarted?.Invoke(collection.Name);
 				Logger.Info(LogCategory.ExportProgress, $"({currentExportable}/{exportableCount}) Exporting '{collection.Name}'");
 				bool exportedSuccessfully = collection.Export(container, options.ProjectRootPath, fileSystem);
 				if (!exportedSuccessfully)

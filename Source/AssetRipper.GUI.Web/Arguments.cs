@@ -11,6 +11,10 @@ internal sealed partial class Arguments
 	[Description("If nonzero, the application will attempt to host on this port, instead of finding a random unused port.")]
 	public int Port { get; set; }
 
+	[CommandLineArgument(DefaultValue = WebApplicationLauncher.Defaults.LaunchBrowser)]
+	[Description("If true, a browser window will be launched automatically.")]
+	public bool LaunchBrowser { get; set; }
+
 	[CommandLineArgument(DefaultValue = WebApplicationLauncher.Defaults.Log)]
 	[Description("If true, the application will log to a file.")]
 	public bool Log { get; set; }
@@ -22,8 +26,4 @@ internal sealed partial class Arguments
 	[CommandLineArgument("local-web-file")]
 	[Description("Files provided with this option will replace online sources.")]
 	public string[]? LocalWebFiles { get; set; }
-
-	[CommandLineArgument(DefaultValue = false)]
-	[Description("If true, a browser window will not be launched automatically.")]
-	public bool Headless { get; set; }
 }
